@@ -1,0 +1,10 @@
+[project]
+name = "immich-eagle-album-sync"
+version = "0.1.0"
+description = "Synchronize albums and assets between Immich and Eagle via their respective APIs."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pydantic>=2.11.4",
+    "python-dotenv>=1.1.0",
+]
