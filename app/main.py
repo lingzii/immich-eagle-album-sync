@@ -1,4 +1,16 @@
+import logging
+
+from rich.logging import RichHandler
+from rich.traceback import install
 from utils.config import settings
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    datefmt="[%X]",
+    handlers=[RichHandler()],
+)
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -7,4 +19,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        install(show_locals=True)
+        main()
+    except KeyboardInterrupt:
+        logger.info("Service stopped by user (KeyboardInterrupt)")
