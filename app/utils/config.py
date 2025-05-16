@@ -1,4 +1,5 @@
 import os
+import socket
 from urllib.parse import urlparse
 
 import httpx
@@ -6,7 +7,16 @@ from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
+def get_ip() -> str:
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.connect(("1.1.1.1", 80))
+        return s.getsockname()[0]
+
+
 class Settings(BaseSettings):
+    BRIDGE_HOST: str = Field(default_factory=get_ip)
+    BRIDGE_PORT: int = Field(41596, ge=1, le=65535)
+
     EAGLE_API_SCHEMA: str = Field("http", pattern="^(http|https)$")
     EAGLE_API_HOST: str
     EAGLE_API_PORT: int = Field(41595, ge=1, le=65535)
@@ -16,6 +26,8 @@ class Settings(BaseSettings):
     IMMICH_API_HOST: str
     IMMICH_API_PORT: int = Field(2283, ge=1, le=65535)
     IMMICH_API_KEY: str
+
+    SCAN_INTERVAL: int = Field(15, ge=1, le=60)
 
     def _API_URL(self, schema: str, host: str, port: int) -> str:
         parsed = urlparse(host)
