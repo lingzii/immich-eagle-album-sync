@@ -3,6 +3,8 @@ import logging
 import anyio
 from rich.logging import RichHandler
 from rich.traceback import install
+from services.scanner import start_sync_scanner
+from services.server import start_bridge_server
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,10 +18,13 @@ logger = logging.getLogger(__name__)
 async def main():
     logger.info("Service starting...")
     try:
-        pass
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(start_sync_scanner)
+            tg.start_soon(start_bridge_server)
+
     except Exception as e:
         logger.exception("Unhandled exception occurred", exc_info=e)
-        raise
+
     finally:
         logger.info("Service shutdown complete.")
 
