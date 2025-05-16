@@ -54,4 +54,4 @@ async def start_bridge_server():
 
     logger.info(f"Run bridge server at {settings.BRIDGE_HOST}:{settings.BRIDGE_PORT}")
     while True:
-        anyio.sleep(3600)
+        await anyio.sleep(3600)
