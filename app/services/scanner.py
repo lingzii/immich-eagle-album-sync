@@ -8,6 +8,7 @@ import anyio
 import httpx
 from utils.config import settings
 
+from services import send_channel
 from services.server import BRIDGE_URL
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,7 @@ async def start_sync_scanner():
             base_url=settings.IMMICH_API_URL + "/api",
             headers={"x-api-key": settings.IMMICH_API_KEY},
         ) as immich,
+        send_channel,
     ):
         while True:
             try:
@@ -118,6 +120,87 @@ async def start_sync_scanner():
                         logger.debug(f"Assets moved to trash: {itemIds}")
                     else:
                         logger.error(f"Failed to move assets to trash: {res.text}")
+
+                eagle_albums = {}  # {eagle_album_id: {immich_asset_ids}}
+                for k in eagle_keys & immich_keys:
+                    asset = eagle_assets[k]
+                    if asset["folders"]:
+                        for i in asset["folders"]:
+                            if i in eagle_albumId_relate_name:
+                                eagle_albums.setdefault(i, set()).add(k)
+                    else:
+                        localDateTime = datetime.fromisoformat(immich_assets[k]["localDateTime"])
+                        year = str(localDateTime.year)
+                        await send_channel.send(
+                            (
+                                asset["id"],
+                                default_folders[year],
+                                immich_assets[k]["fileCreatedAt"],
+                            )
+                        )
+
+                res = await immich.get("/albums")
+                eagle_albumId_relate_immich_albumId = {
+                    i["description"]: i["id"] for i in res.json()
+                }
+                immich_keys, eagle_keys = (
+                    eagle_albumId_relate_immich_albumId.keys(),
+                    eagle_albumId_relate_name.keys(),
+                )
+
+                # Create new albums in Immich
+                async def create_album(k):
+                    res = await immich.post(
+                        "/albums",
+                        json={
+                            "albumName": eagle_albumId_relate_name[k],
+                            "assetIds": eagle_albums.get(k, []),
+                            "description": k,
+                        },
+                    )
+                    if res.is_success:
+                        logger.debug(f"Album {i} created successfully.")
+                    else:
+                        logger.error(f"Failed to create album {i}: {res.text}")
+
+                # Delete albums from Immich
+                async def delete_album(k):
+                    res = await immich.delete(f"/albums/{eagle_albumId_relate_immich_albumId[k]}")
+                    if res.is_success:
+                        logger.debug(f"Album {i} deleted successfully.")
+                    else:
+                        logger.error(f"Failed to delete album {i}: {res.text}")
+
+                # Sync albums between Eagle and Immich
+                async def sync_albums(k):
+                    url = f"/albums/{eagle_albumId_relate_immich_albumId[k]}"
+                    res = await immich.get(url)
+                    immich_album_assetIds = {i["id"] for i in res.json()["assets"]}
+                    eagle_album_assetIds = eagle_albums.get(k, set())
+
+                    # Add assets to Immich album
+                    if ids := list(eagle_album_assetIds - immich_album_assetIds):
+                        res = await immich.put(f"{url}/assets", json={"ids": ids})
+                        if res.is_success:
+                            logger.debug(f"Assets added to album {k} successfully.")
+                        else:
+                            logger.error(f"Failed to add assets to album {k}: {res.text}")
+
+                    # Remove assets from Immich album
+                    if ids := list(immich_album_assetIds - eagle_album_assetIds):
+                        res = await immich.request("DELETE", f"{url}/assets", json={"ids": ids})
+                        if res.is_success:
+                            logger.debug(f"Assets removed from album {k} successfully.")
+                        else:
+                            logger.error(f"Failed to remove assets from album {k}: {res.text}")
+
+                    async with anyio.create_task_group() as tg:
+                        for i in immich_keys - eagle_keys:
+                            tg.start_soon(create_album, i)
+                        for i in eagle_keys - immich_keys:
+                            tg.start_soon(delete_album, i)
+                        for i in eagle_keys & immich_keys:
+                            tg.start_soon(sync_albums, i)
 
             except Exception as e:
                 logger.exception(f"Error occurred during API scan: {e}")
