@@ -7,6 +7,8 @@ from utils.config import settings
 
 logger = logging.getLogger(__name__)
 
+BRIDGE_URL = f"http://{settings.BRIDGE_HOST}:{settings.BRIDGE_PORT}"
+
 
 def is_valid_asset_id(assetId: str) -> bool:
     try:
@@ -33,13 +35,16 @@ async def handler(request: web.Request) -> web.Response:
     if not is_valid_asset_id(assetId):
         return web.json_response({"error": "Invalid assetId"}, status=400)
 
-    async with ClientSession() as session:
+    async with ClientSession(
+        base_url=settings.IMMICH_API_URL + "/api/",
+        headers={"x-api-key": settings.IMMICH_API_KEY},
+    ) as session:
         if assetType == "IMAGE":
             return await fetch_asset(
-                session, f"/assets/{assetId}/thumbnail", params={"size": "thumbnail"}
+                session, f"assets/{assetId}/thumbnail", params={"size": "thumbnail"}
             )
         elif assetType == "VIDEO":
-            return await fetch_asset(session, f"/assets/{assetId}/video/playback")
+            return await fetch_asset(session, f"assets/{assetId}/video/playback")
 
 
 async def start_bridge_server():
@@ -52,6 +57,6 @@ async def start_bridge_server():
     site = web.TCPSite(runner, settings.BRIDGE_HOST, settings.BRIDGE_PORT)
     await site.start()
 
-    logger.info(f"Run bridge server at {settings.BRIDGE_HOST}:{settings.BRIDGE_PORT}")
+    logger.info(f"Run bridge server at {BRIDGE_URL}")
     while True:
         await anyio.sleep(3600)
