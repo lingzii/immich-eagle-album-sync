@@ -1,10 +1,14 @@
 import logging
 import math
 import re
+from datetime import datetime
+from pathlib import Path
 
 import anyio
 import httpx
 from utils.config import settings
+
+from services.server import BRIDGE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +71,53 @@ async def start_sync_scanner():
                         for j in i["children"]:
                             eagle_albumId_relate_name[j["id"]] = j["name"]
 
+                res = await eagle.get("/item/list", params={"limit": 1000000})
+                eagle_assets = {i["annotation"]: i for i in res.json()["data"]}
                 immich_assets = {i["id"]: i for i in await fetch_all_assets(immich)}
+                logger.info(f"Fetched {len(eagle_assets)} assets from Eagle.")
                 logger.info(f"Fetched {len(immich_assets)} assets from Immich.")
+
+                eagle_keys, immich_keys = eagle_assets.keys(), immich_assets.keys()
+
+                async def add_asset(
+                    assetType: str, assetId: str, name: str, localDateTime: datetime
+                ):
+                    if year := str(localDateTime.year) not in default_folders:
+                        res = await eagle.post("/folder/create", json={"folderName": year})
+                        if res.is_success:
+                            default_folders[year] = res.json()["id"]
+                            logger.debug(f"Create folder {year}: {res.json()['id']}")
+                        else:
+                            logger.error(f"Create folder {year} failed: {res.text}")
+
+                    res = await eagle.post(
+                        "/item/addFromURL",
+                        json={
+                            "url": f"{BRIDGE_URL}/?type={assetType}&id={assetId}",
+                            "annotation": assetId,
+                            "name": Path(name).stem,
+                        },
+                    )
+                    if res.is_success:
+                        logger.debug(f"Asset {assetId} added successfully.")
+                    else:
+                        logger.error(f"Failed to add asset {assetId}: {res.text}")
+
+                # Add new assets to Eagle
+                async with anyio.create_task_group() as tg:
+                    for i in map(immich_assets.get, immich_keys - eagle_keys):
+                        localDateTime = datetime.fromisoformat(i["localDateTime"])
+                        tg.start_soon(
+                            add_asset, i["type"], i["id"], i["originalFileName"], localDateTime
+                        )
+
+                # Delete assets from Eagle
+                if itemIds := [i["id"] for i in map(eagle_assets.get, eagle_keys - immich_keys)]:
+                    res = await eagle.post("/item/moveToTrash", json={"itemIds": itemIds})
+                    if res.is_success:
+                        logger.debug(f"Assets moved to trash: {itemIds}")
+                    else:
+                        logger.error(f"Failed to move assets to trash: {res.text}")
 
             except Exception as e:
                 logger.exception(f"Error occurred during API scan: {e}")
