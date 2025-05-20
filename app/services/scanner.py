@@ -8,24 +8,10 @@ import anyio
 import httpx
 from utils.config import settings
 
-from services import send_channel
+from services import EagleAsyncClient, send_channel
 from services.server import BRIDGE_URL
 
 logger = logging.getLogger(__name__)
-
-
-class EagleAsyncClient(httpx.AsyncClient):
-    def __init__(self, *, base_url: str = "", **kwargs):
-        self.token = {"token": settings.EAGLE_API_KEY}
-        super().__init__(base_url=base_url, **kwargs)
-
-    async def get(self, url, *, params=None, **kwargs):
-        merged_params = {**self.token, **(params or {})}
-        return await super().get(url, params=merged_params, **kwargs)
-
-    async def post(self, url, *, json=None, **kwargs):
-        merged_json = {**self.token, **(json or {})}
-        return await super().post(url, json=merged_json, **kwargs)
 
 
 async def fetch_all_assets(client: httpx.AsyncClient, size: int = 1000) -> list[dict]:
