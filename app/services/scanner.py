@@ -70,11 +70,11 @@ async def start_sync_scanner():
                 async def add_asset(
                     assetType: str, assetId: str, name: str, localDateTime: datetime
                 ):
-                    if year := str(localDateTime.year) not in default_folders:
+                    if (year := str(localDateTime.year)) not in default_folders:
                         res = await eagle.post("/folder/create", json={"folderName": year})
                         if res.is_success:
-                            default_folders[year] = res.json()["id"]
-                            logger.debug(f"Create folder {year}: {res.json()['id']}")
+                            default_folders[year] = res.json()["data"]["id"]
+                            logger.debug(f"Create folder {year}: {res.json()['data']['id']}")
                         else:
                             logger.error(f"Create folder {year} failed: {res.text}")
 
